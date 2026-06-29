@@ -80,4 +80,17 @@ different parts of the UI.
 | See current UI state | `get_tree` | `max_depth` (3 for overview, 6 for detail) |
 | Click a button or tab | `click_element` | `description` |
 | Type into a field | `type_into` | `description` + `text` |
+| Submit / confirm input | `press_key` | `key` = `return` |
+| Navigate between fields | `press_key` | `key` = `tab` |
+| Dismiss a dialog | `press_key` | `key` = `escape` |
 | Observe canvas / visual state | `screenshot` | — |
+
+## Navigating to a URL in the built-in browser
+
+Typing a URL does not navigate until Enter is pressed:
+
+```
+click_element   role="AXTextField"  description="Address and search bar"
+type_into       role="AXTextField"  description="Address and search bar"  text="https://example.com"
+press_key       key="return"
+```

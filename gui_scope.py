@@ -152,6 +152,27 @@ class GUIScope:
                 ),
                 "input_schema": {"type": "object", "properties": {}},
             },
+            {
+                "name": "press_key",
+                "description": (
+                    "Press a keyboard key. Use after type_into to submit a form or confirm "
+                    "input (e.g. press 'return' after typing a URL)."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "key": {
+                            "type": "string",
+                            "description": (
+                                "Key name: return, tab, escape, space, delete, "
+                                "up, down, left, right. Also accepts a raw macOS "
+                                "virtual key code as a decimal integer string."
+                            ),
+                        }
+                    },
+                    "required": ["key"],
+                },
+            },
         ]
 
     # ── dispatch ─────────────────────────────────────────────────────────────
@@ -186,6 +207,10 @@ class GUIScope:
             png = self._screenshot()
             b64 = base64.standard_b64encode(png).decode()
             return [{"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}}]
+
+        elif name == "press_key":
+            ok = self._press_key(inputs["key"])
+            return json.dumps({"ok": ok})
 
         return json.dumps({"error": f"unknown tool: {name}"})
 
@@ -274,8 +299,19 @@ class GUIScope:
             out.append(el)
 
         try:
+            # AXTabs exposes tab buttons separately from AXChildren (tab pages).
+            tabs = []
+            try:
+                tabs = el.AXTabs or []
+            except Exception:
+                pass
+            seen = set()
+            for tab in tabs:
+                seen.add(id(tab))
+                self._collect_in(tab, criteria, out)
             for child in (el.AXChildren or []):
-                self._collect_in(child, criteria, out)
+                if id(child) not in seen:
+                    self._collect_in(child, criteria, out)
         except Exception:
             pass
 
@@ -293,32 +329,48 @@ class GUIScope:
             return "not_found"
 
         for el in candidates:
-            # Skip purely decorative elements: no declared actions and zero size.
+            # AXEnabled=False means the element is inert — skip it.
             try:
-                actions = el.AXActions or []
+                if el.AXEnabled is False:
+                    continue
             except Exception:
-                actions = []
-            try:
-                pos  = el.AXPosition
-                size = el.AXSize
-            except Exception:
-                continue  # no position at all — not interactive
+                pass
 
-            if not actions and size.width == 0 and size.height == 0:
-                continue
-
+            # Try AXPress first, then every action the element actually declares.
+            # Java/Swing elements often register non-standard names like 'Pick'
+            # rather than 'AXPress', so el.Press() silently fails while
+            # el.performAction('Pick') works.
+            tried = set()
             try:
                 el.Press()
                 return "ok"
             except Exception:
+                tried.add("AXPress")
+
+            try:
+                for action in (el.getActions() or []):
+                    if action in tried:
+                        continue
+                    tried.add(action)
+                    try:
+                        el.performAction(action)
+                        return "ok"
+                    except Exception:
+                        pass
+            except Exception:
                 pass
 
-            if size.width == 0 and size.height == 0:
-                continue  # AXPress failed and no position to fall back to
-            x = pos.x + size.width  / 2
-            y = pos.y + size.height / 2
-            self._mouse_click(x, y)
-            return "ok"
+            # Position-based mouse click — only when the element has a real hit area.
+            try:
+                pos  = el.AXPosition
+                size = el.AXSize
+                if size.width > 0 or size.height > 0:
+                    x = pos.x + size.width  / 2
+                    y = pos.y + size.height / 2
+                    self._mouse_click(x, y)
+                    return "ok"
+            except Exception:
+                pass
 
         # Fallback for Java/Swing tabs: find the AXTabGroup that owns a child
         # matching the criteria and select it by setting AXValue on the group.
@@ -349,10 +401,27 @@ class GUIScope:
 
         try:
             if safe(el, "AXRole") == "AXTabGroup":
-                for child in (el.AXChildren or []):
-                    if all(safe(child, k) == v for k, v in criteria.items()):
+                # AXTabs holds the clickable tab buttons; AXChildren holds pages.
+                # Try both. For each candidate: Press() first, then AXValue fallback.
+                candidates = []
+                try:
+                    candidates += list(el.AXTabs or [])
+                except Exception:
+                    pass
+                try:
+                    candidates += list(el.AXChildren or [])
+                except Exception:
+                    pass
+
+                for tab in candidates:
+                    if all(safe(tab, k) == v for k, v in criteria.items()):
                         try:
-                            el.AXValue = child
+                            tab.Press()
+                            return True
+                        except Exception:
+                            pass
+                        try:
+                            el.AXValue = tab
                             return True
                         except Exception:
                             pass
@@ -364,6 +433,30 @@ class GUIScope:
             pass
 
         return False
+
+    _KEY_CODES: dict[str, int] = {
+        "return": 36, "enter": 36,
+        "tab": 48,
+        "escape": 53, "esc": 53,
+        "space": 49,
+        "delete": 51, "backspace": 51,
+        "up": 126, "down": 125, "left": 123, "right": 124,
+    }
+
+    def _press_key(self, key: str) -> bool:
+        code = self._KEY_CODES.get(key.lower())
+        if code is None:
+            try:
+                code = int(key)
+            except ValueError:
+                return False
+        down = Quartz.CGEventCreateKeyboardEvent(None, code, True)
+        up   = Quartz.CGEventCreateKeyboardEvent(None, code, False)
+        # Post directly to the scoped process so the key lands regardless of
+        # which app has focus when the script runs.
+        Quartz.CGEventPostToPid(self._pid, down)
+        Quartz.CGEventPostToPid(self._pid, up)
+        return True
 
     def _mouse_click(self, x: float, y: float) -> None:
         """Post a left-click at absolute screen coordinates via Quartz."""

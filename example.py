@@ -50,6 +50,11 @@ def cmd_type(scope: GUIScope, args: argparse.Namespace) -> None:
     print("ok" if result.get("ok") else "element not found")
 
 
+def cmd_key(scope: GUIScope, args: argparse.Namespace) -> None:
+    result = json.loads(scope.dispatch("press_key", {"key": args.key}))
+    print("ok" if result.get("ok") else "failed")
+
+
 def cmd_shot(scope: GUIScope, args: argparse.Namespace) -> None:
     blocks = scope.dispatch("screenshot", {})
     if not isinstance(blocks, list):
@@ -104,6 +109,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--role",        default=None)
     p.add_argument("--description", default=None)
 
+    # key
+    p = sub.add_parser("key", parents=[shared], help="Press a keyboard key")
+    p.add_argument("key", help="Key name: return, tab, escape, space, delete, up, down, left, right")
+
     # shot
     p = sub.add_parser("shot", parents=[shared], help="Take a screenshot of the application window")
     p.add_argument("--out", default="screenshot.png", metavar="FILE")
@@ -127,6 +136,7 @@ def main() -> None:
         "tree":  cmd_tree,
         "click": cmd_click,
         "type":  cmd_type,
+        "key":   cmd_key,
         "shot":  cmd_shot,
     }
     dispatch[args.cmd](scope, args)
