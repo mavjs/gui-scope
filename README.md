@@ -1,9 +1,13 @@
 # gui-scope
 
+> [!WARNING]
+> This is a AI created application to show case how using the operating system's Accessibility API can allow us to create a tool call without using an mcp server.
+> This is only tested with a very minimal use of Burp Suite - a web application security assessment and penetration testing tool.
+
 Process-scoped macOS GUI automation via the Accessibility API. Gives Claude Code
 read/write access to a single application — no shell escape, no other windows.
 
-Designed for authorised web application security testing with Burp Suite, but
+Designed for authorised web application security testing with Burp Suite, but should
 works with any macOS application.
 
 ---
