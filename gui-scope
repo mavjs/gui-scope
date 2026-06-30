@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
-# example.py — exercise gui_scope.py from the command line
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#   "atomacos",
+#   "pyobjc-framework-Quartz",
+#   "pyobjc-framework-Cocoa",
+# ]
+# ///
+#
+# gui-scope — CLI for gui_scope.py
 #
 # usage:
-#   uv run example.py tree  --app "Burp Suite" [--depth 4]
-#   uv run example.py click --app "Burp Suite" --title "Send"
-#   uv run example.py type  --app "Burp Suite" --title "..." --text "hello"
-#   uv run example.py shot  --app "Burp Suite" [--out screenshot.png]
+#   uv run gui-scope tree  --app "Burp Suite" [--depth 4]
+#   uv run gui-scope click --app "Burp Suite" --description "Next"
+#   uv run gui-scope type  --app "Burp Suite" --description "..." --text "hello"
+#   uv run gui-scope shot  --app "Burp Suite" [--out screenshot.png]
 #
 # --app and --no-launch go after the subcommand name.
 # The app is launched automatically if not already running.
@@ -74,7 +83,7 @@ def cmd_shot(scope: GUIScope, args: argparse.Namespace) -> None:
 def build_parser() -> argparse.ArgumentParser:
     # Shared flags inherited by every subcommand.
     # Placing them here means they go *after* the subcommand name:
-    #   uv run example.py tree --app "Burp Suite" --depth 3
+    #   uv run gui-scope tree --app "Burp Suite" --depth 3
     shared = argparse.ArgumentParser(add_help=False)
     shared.add_argument(
         "--app", default="Burp Suite", metavar="NAME",

@@ -8,3 +8,10 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Dev files
+*.png
+*.jpg
+
+# macOS specific
+.DS_Store

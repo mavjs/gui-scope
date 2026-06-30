@@ -10,7 +10,7 @@ read/write access to a single application — no shell, no other windows.
 ```
 gui-scope/
 ├── gui_scope.py       # GUIScope class — AX shim and tool surface
-├── example.py         # CLI for testing all four dispatch paths
+├── gui-scope         # CLI for testing all four dispatch paths
 ├── pyproject.toml     # deps: atomacos, pyobjc-framework-Quartz/Cocoa
 ├── SKILL.md           # prompt document for injecting into Claude's context
 └── openwebui_tool.py  # OpenWebUI tool plugin wrapping GUIScope
@@ -19,10 +19,10 @@ gui-scope/
 ## Running
 
 ```bash
-uv run example.py tree  --app "Burp Suite" --depth 3
-uv run example.py click --app "Burp Suite" --description "Next"
-uv run example.py type  --app "Burp Suite" --description "..." --text "hello"
-uv run example.py shot  --app "Burp Suite" --out screenshot.png
+uv run gui-scope tree  --app "Burp Suite" --depth 3
+uv run gui-scope click --app "Burp Suite" --description "Next"
+uv run gui-scope type  --app "Burp Suite" --description "..." --text "hello"
+uv run gui-scope shot  --app "Burp Suite" --out screenshot.png
 ```
 
 `--app` and all flags go **after** the subcommand name, not before.
