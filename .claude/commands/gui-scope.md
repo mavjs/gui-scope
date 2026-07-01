@@ -1,3 +1,8 @@
+---
+description: Drive any GUI application (macOS, or Linux/Wayland) via the gui-scope CLI — general-purpose, not tied to one app. Use for any task that needs to click, type, or read the UI of a desktop application.
+argument-hint: '[task description, e.g. "open TextEdit and create a new document"]'
+---
+
 You are driving a GUI application via the `gui-scope` CLI in this project.
 All tool calls must go through `uv run gui-scope` using the Bash tool. This
 works the same way regardless of which application or OS you're targeting.

@@ -1,3 +1,8 @@
+---
+description: Drive Burp Suite's GUI for authorised web application security testing via the gui-scope CLI — Burp-specific navigation patterns and Java/Swing quirks baked in.
+argument-hint: '[task description, e.g. "start Burp, open the built-in browser, and navigate to https://target.example.com/"]'
+---
+
 You are helping with **authorised web application security testing** using Burp Suite.
 You have full control of the Burp Suite GUI via the `gui-scope` CLI in this project.
 All tool calls must go through `uv run gui-scope` using the Bash tool.
