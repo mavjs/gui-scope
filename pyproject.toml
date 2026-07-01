@@ -3,10 +3,22 @@ name = "gui-scope"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-    "atomacos",
-    "pyobjc-framework-Quartz",
-    "pyobjc-framework-Cocoa",
+    "atomacos; sys_platform == 'darwin'",
+    "pyobjc-framework-Quartz; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa; sys_platform == 'darwin'",
+    # Linux (Wayland backend). X11 support is planned as a follow-up and will
+    # add python-xlib/mss at that point — not needed for Wayland.
+    "PyGObject; sys_platform == 'linux'",
+    "Pillow; sys_platform == 'linux'",
+    "psutil; sys_platform == 'linux'",
 ]
 
-[tool.uv]
-package = false
+[project.scripts]
+gui-scope = "cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+include = ["gui_scope.py", "cli.py", "backends/**/*.py"]

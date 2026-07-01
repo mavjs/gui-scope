@@ -4,6 +4,27 @@ Inject this document into your context when using GUIScope to drive Burp Suite.
 
 ---
 
+## Linux note — Burp Suite is currently NOT usable on Linux
+
+Confirmed on real hardware (CentOS Stream 10/GNOME/Wayland, 2026-07): a
+running Burp Suite process never registers with AT-SPI at all, because
+Java's accessibility bridge (`java-atk-wrapper`) isn't active. That package
+isn't packaged for EL10/current EPEL, and even where available it must be
+manually wired into the *specific* JRE an app uses — Burp bundles its own
+private JRE, so this can't be fixed with a simple system package install.
+Everything below describing Burp's AX/AT-SPI tree therefore does not
+currently apply on Linux — this skill is macOS-only until that's resolved.
+
+The rest of GUIScope's Linux/Wayland backend (AT-SPI tree walk, click, type,
+press_key, screenshot, portal consent flow) is confirmed working end-to-end
+against native GTK apps — the blocker is Java accessibility support
+specifically, not the backend. One Linux-specific gotcha worth knowing for
+any non-Java app: AT-SPI's app name is the **executable name**
+(e.g. `gnome-text-editor`), not the display name shown in menus
+(`Text Editor`) — pass `--app` accordingly.
+
+---
+
 ## Setup: starting Burp Suite
 
 Run these in order. Wait for each to succeed before proceeding.

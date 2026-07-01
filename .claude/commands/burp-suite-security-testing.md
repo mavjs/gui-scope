@@ -18,6 +18,12 @@ All tool calls must go through `uv run gui-scope` using the Bash tool.
 All flags go **after** the subcommand name.
 Use `--description` for every click and type — never `--title` (Burp is Java/Swing; labels are in AXDescription, not AXTitle).
 
+The CLI/tool contract is identical on macOS and Linux (Wayland) — the same
+`--role`/`--title`/`--description` flags work regardless of OS. On Linux the
+"always use description" rule below is unverified (see SKILL.md's Linux
+note) — fall back to `--title` if `--description` keeps returning
+`not_found`.
+
 ---
 
 ## Starting Burp Suite

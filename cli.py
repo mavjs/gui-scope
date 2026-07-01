@@ -1,14 +1,4 @@
-#!/usr/bin/env python3
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#   "atomacos",
-#   "pyobjc-framework-Quartz",
-#   "pyobjc-framework-Cocoa",
-# ]
-# ///
-#
-# gui-scope — CLI for gui_scope.py
+# cli.py — CLI entry point for gui_scope.py (installed as the `gui-scope` script)
 #
 # usage:
 #   uv run gui-scope tree  --app "Burp Suite" [--depth 4]
@@ -87,7 +77,12 @@ def build_parser() -> argparse.ArgumentParser:
     shared = argparse.ArgumentParser(add_help=False)
     shared.add_argument(
         "--app", default="Burp Suite", metavar="NAME",
-        help="Localized application name (default: 'Burp Suite')",
+        help=(
+            "Application name (default: 'Burp Suite'). On macOS this is the "
+            "localized display name. On Linux this is matched against the "
+            "AT-SPI-registered app name, then a .desktop entry, then a literal "
+            "executable on $PATH — use --launch-cmd if none of those match."
+        ),
     )
     shared.add_argument(
         "--no-launch", action="store_true",
@@ -97,8 +92,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--timeout", type=int, default=30, metavar="SEC",
         help="Seconds to wait for the app to start (default: 30)",
     )
+    shared.add_argument(
+        "--launch-cmd", default=None, metavar="CMD",
+        help="Linux only: explicit command to launch the app with, if --app doesn't match a .desktop entry or executable",
+    )
 
-    root = argparse.ArgumentParser(prog="example")
+    root = argparse.ArgumentParser(prog="gui-scope")
     sub = root.add_subparsers(dest="cmd", required=True)
 
     # tree
@@ -137,6 +136,7 @@ def main() -> None:
             args.app,
             auto_launch=not args.no_launch,
             timeout=args.timeout,
+            launch_cmd=args.launch_cmd,
         )
     except RuntimeError as e:
         sys.exit(f"error: {e}")

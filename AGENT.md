@@ -2,19 +2,48 @@
 
 ## Project
 
-Process-scoped macOS GUI automation via the Accessibility API. Gives an agent
+Process-scoped GUI automation via the OS accessibility API. Gives an agent
 read/write access to a single application — no shell, no other windows.
+
+macOS is fully supported. Linux support targets Wayland first (GNOME/mutter,
+via xdg-desktop-portal); X11 is a planned follow-up, not yet implemented.
+
+## Documentation conventions
+
+Keep every markdown file an agent needs to read (`AGENT.md`/`CLAUDE.md`,
+`SKILL.md`, `HOWTO.md`, `README.md`, `.claude/commands/*.md`) under 500
+lines. If one grows past that, split it rather than letting it keep
+growing — e.g. move a large "what we learned" section into its own doc and
+link to it, instead of appending indefinitely.
 
 ## Structure
 
 ```
 gui-scope/
-├── gui_scope.py       # GUIScope class — AX shim and tool surface
-├── gui-scope         # CLI for testing all four dispatch paths
-├── pyproject.toml     # deps: atomacos, pyobjc-framework-Quartz/Cocoa
-├── SKILL.md           # prompt document for injecting into Claude's context
-└── openwebui_tool.py  # OpenWebUI tool plugin wrapping GUIScope
+├── gui_scope.py            # GUIScope facade — picks a backend, keeps tool surface/dispatch
+├── backends/
+│   ├── base.py               # GUIScopeBackend contract every backend implements
+│   ├── macos.py               # AX/atomacos/Quartz backend
+│   ├── linux_common.py         # AT-SPI2 tree/find/click/type — shared X11+Wayland
+│   ├── linux_wayland.py         # xdg-desktop-portal input + screenshot
+│   └── wayland_token.py          # caches the RemoteDesktop consent token
+├── cli.py                    # argparse CLI, installed as the `gui-scope` console script
+├── pyproject.toml            # deps + [project.scripts] entry point, platform-gated via sys_platform markers
+└── SKILL.md                  # prompt document for injecting into Claude's context
 ```
+
+## Backend architecture
+
+`gui_scope.py` is a thin facade: `GUIScope.__init__` calls
+`backends.get_backend_class()` (dispatches on `platform.system()` and, on
+Linux, `XDG_SESSION_TYPE`) and delegates all internal calls to
+`self._backend`. `tools`/`dispatch()` are shared and never change per
+platform — only the private `_get_tree`/`_click`/`_type_into`/`_press_key`/
+`_screenshot` implementations differ, per `backends/base.py`'s contract.
+
+`gui_scope.py` must never import an OS-specific module at file scope —
+backend selection (and its imports) happens lazily inside
+`get_backend_class()`, so the facade stays importable regardless of platform.
 
 ## Running
 
@@ -29,13 +58,14 @@ uv run gui-scope shot  --app "Burp Suite" --out screenshot.png
 
 ## Tool surface
 
-`GUIScope` exposes four methods via `dispatch(name, inputs)`:
+`GUIScope` exposes five methods via `dispatch(name, inputs)`:
 
 | Tool | Returns |
 |---|---|
-| `get_tree` | JSON string of the AX tree |
+| `get_tree` | JSON string of the accessibility tree |
 | `click_element` | `{"ok": bool, "result": "ok" \| "not_found" \| "action_failed"}` |
 | `type_into` | `{"ok": bool}` |
+| `press_key` | `{"ok": bool}` |
 | `screenshot` | list of image content blocks (base64 PNG) |
 
 Provider integration: pass `scope.tools` to the model, route responses through
@@ -43,45 +73,201 @@ Provider integration: pass `scope.tools` to the model, route responses through
 
 ## Critical gotchas
 
-**Java/Swing apps (Burp Suite)**
+**Java/Swing apps (Burp Suite) — macOS**
 
 - Labels live in `AXDescription`, not `AXTitle`. Always match on `--description`.
 - Never use `atomacos.findFirst` — it uses its own attribute access path which
-  breaks on the Java AX bridge. `GUIScope` uses a custom `_find_in` with the
-  same `safe()` accessor as `_get_tree`; if an element appears in the tree it
-  will be found.
+  breaks on the Java AX bridge. `MacOSBackend` uses a custom `_find_in` with
+  the same `safe()` accessor as `_get_tree`; if an element appears in the tree
+  it will be found.
 - `AXPress` often silently fails on Swing buttons. `_click` falls back to a
   position-based mouse click via `Quartz.CGEventCreateMouseEvent` using the
   element's `AXPosition` + `AXSize`.
 
-**Permissions**
+**Permissions — macOS**
 
-- The process running `gui_scope.py` must have Accessibility permission:
+- The process running gui-scope must have Accessibility permission:
   System Settings → Privacy & Security → Accessibility.
 - Symptom of missing permission: `AXRole` raises `AttributeError` or the tree
   returns `{"role": "", "title": "", "value": "", "desc": "", "children": []}`.
 - Toggling the permission off and back on is required when re-adding a terminal.
 
-**App lookup**
+**App lookup — macOS**
 
-- `GUIScope.__init__` calls `_try_connect` which enumerates `NSWorkspace`
-  running apps by PID and validates with `app.AXRole` before returning.
+- `MacOSBackend._try_connect` enumerates `NSWorkspace` running apps by PID and
+  validates with `app.AXRole` before returning.
 - Pure `getAppRefByLocalizedName` is only used as a last resort — PID-based
   lookup is more reliable for Java apps.
 - App is auto-launched via `open -a` if not running (pass `auto_launch=False`
   to disable). Default timeout is 30s.
 
-**Canvas elements**
+**Canvas elements — macOS**
 
 - Burp's scanner visualizations and some panes are canvas-rendered and will not
   appear as AX nodes. Use `screenshot` to observe state, then derive
   coordinates from `CGWindowBounds` if pixel-level interaction is required.
 
+**Linux/Wayland — headless limitation**
+
+- `LinuxWaylandBackend` needs an active, logged-in graphical session with
+  `xdg-desktop-portal` + `xdg-desktop-portal-gnome` running. Portal calls
+  block waiting for the compositor to broker a response — this backend
+  **cannot run on a headless box with no logged-in session**, unlike the
+  macOS/X11 stories.
+
+**Linux/Wayland — consent dialog + token cache (CONFIRMED working)**
+
+- First run (or first run after the cached token is invalidated) of any
+  click/key action blocks on a GNOME "Allow input control?" dialog that a
+  human must approve. **The "Remember this decision" checkbox in that
+  dialog must be checked** — that's the UI-side counterpart to requesting
+  `persist_mode=2` in code; without it, GNOME may keep prompting even though
+  we request persistence.
+- `backends/wayland_token.py` caches the RemoteDesktop `restore_token` at
+  `~/.config/gui-scope/wayland_token` (mode 0600). **Confirmed on real
+  hardware (CentOS Stream 10/GNOME/mutter, 2026-07-01): after checking
+  "Remember this decision" once, subsequent `press_key`/`click_element`
+  calls skip the dialog entirely** — no more prompting. If runs keep
+  prompting, delete that file and re-approve, making sure to check the
+  remember box this time.
+- The `Screenshot` portal's consent dialog is a separate, stateless call
+  (no session/token) from RemoteDesktop's — whether it re-prompts on every
+  `screenshot` call or is remembered per-session is **not yet verified**
+  (we've only exercised it once so far); assume it may prompt each time
+  until confirmed otherwise.
+
+**Linux/Wayland — click precision**
+
+- There is no true absolute pointer-positioning portal call without an
+  active ScreenCast/PipeWire session. `_mouse_click` uses a corner-warp +
+  relative-move workaround (`NotifyPointerMotion` to a clamped corner, then a
+  relative move to the target). This is best-effort — verify precision,
+  especially on multi-monitor or HiDPI-scaled setups, before relying on it
+  for small UI targets.
+
+**Linux — AT-SPI field mapping (still unverified for Burp/Java specifically)**
+
+- `linux_common.py` maps `title → get_name()` and `description →
+  get_description()`, mirroring the macOS `AXTitle`/`AXDescription` split.
+  Confirmed working against a native GTK4 app (gnome-text-editor): buttons'
+  labels land in `get_description()` (e.g. "New Tab", "Main Menu"), matching
+  the hypothesis. Whether Burp's Swing labels would land the same way is
+  **still unverified — Burp Suite is currently unreachable via AT-SPI at
+  all** (see the java-atk-wrapper gotcha below), so this remains open.
+- Similarly, whether JTabbedPane tabs expose a working `Atspi.Action`
+  interface is unverified (untested — no tab-group widget was exercised).
+
+**Linux — Java/Swing apps (Burp Suite) are currently unreachable via AT-SPI**
+
+- Confirmed on real hardware: a running Burp Suite process does not appear
+  in `Atspi.get_desktop(0)`'s children at all — Java's accessibility bridge
+  never activates without `java-atk-wrapper`.
+- `java-atk-wrapper` is **not packaged for EL10 / current EPEL** as of
+  2026-07 — `sudo dnf install epel-release && sudo dnf install
+  java-atk-wrapper` fails because the package doesn't exist for this distro
+  version. It's also unmaintained upstream since ~2019.
+- Even if built from source, Fedora/EPEL's packaging convention installs it
+  JRE-independently — each JRE needs the wrapper's `.jar`/`.so` manually
+  symlinked in and its own `accessibility.properties` edited. Burp Suite
+  ships its own bundled private JRE (not the system one), so a system-wide
+  install wouldn't automatically apply to it regardless.
+- **Net effect: Burp Suite specifically cannot be automated via this
+  Wayland/AT-SPI backend today.** The rest of the backend (AT-SPI tree
+  walk, click, type, press_key, screenshot, portal consent/token flow) is
+  confirmed working end-to-end against a native GTK4 app
+  (gnome-text-editor) — the blocker is Java accessibility support, not the
+  backend implementation.
+
+**Linux — `toolkit-accessibility` gsetting is NOT actually required (correction)**
+
+- Earlier testing assumed GTK apps need
+  `gsettings set org.gnome.desktop.interface toolkit-accessibility true` to
+  register with AT-SPI at all. **Disproven on real hardware**: with that
+  setting explicitly reset to `false`, a freshly-launched gnome-text-editor
+  still registered with AT-SPI and `tree`/`click`/`type` all worked
+  identically. The actual root cause of the original connection failures
+  was the app-name mismatch below, not this setting. It may still matter for
+  other toolkits/older GNOME versions, but don't assume it's required.
+
+**Linux — AT-SPI app-name matching uses the executable name, not the display name**
+
+- Confirmed: AT-SPI's `get_name()` for an app returns its process/executable
+  name (e.g. `"gnome-text-editor"`), **not** the human-friendly display name
+  shown in menus (`"Text Editor"`). Passing `--app "Text Editor"` returns
+  `not_found`/times out; `--app "gnome-text-editor"` works. When in doubt,
+  check the actual process name (`ps aux`) or query
+  `Atspi.get_desktop(0)`'s children directly.
+
+**Linux — click requires only SENSITIVE, not ENABLED (fixed bug)**
+
+- `Atspi.StateType.ENABLED` is unreliable on GTK4 — confirmed a fully
+  clickable, sensitive button reported `ENABLED=False` while
+  `SENSITIVE=True`. `_click` in `linux_common.py` now gates only on
+  `SENSITIVE`; requiring both caused every click to fall through to
+  `action_failed` even when a working `Action` interface existed.
+
+**Linux — RemoteDesktop CreateSession needs `session_handle_token` (fixed bug)**
+
+- `CreateSession`'s options dict needs **both** `handle_token` (for the
+  Request object) and `session_handle_token` (for the Session object) —
+  omitting the latter causes a `Missing token` D-Bus error. Fixed in
+  `linux_wayland.py`.
+
+**Linux — AT-SPI never reports true absolute window position (confirmed limitation, downgrades screenshot)**
+
+- Confirmed on real hardware: `Atspi.Component.get_position()`/
+  `get_extents()` return `(0, 0)` for a top-level frame's position
+  **regardless of `CoordType` (`SCREEN`, `WINDOW`, `PARENT`) and regardless
+  of the window's true on-screen position** (moved the window away from the
+  origin and re-checked — still `(0, 0)`). Only size is accurate. This
+  environment was GNOME Remote Desktop (RDP) into a headless/virtual-monitor
+  mutter session — **unconfirmed whether this is specific to that headless
+  RDP topology or a general Wayland/mutter limitation**; re-verify on a
+  normal (non-RDP) GNOME/Wayland session or VM.
+- Tried unlocking real position via `org.gnome.Shell.Introspect.GetWindows`
+  (the modern, safer replacement for the old `Shell.Eval`) — denied even
+  with an active RemoteDesktop session (`AccessDenied: GetWindows is not
+  allowed`). This API likely requires an active **ScreenCast** session too
+  (same pattern as `NotifyPointerMotionAbsolute`), which we deliberately
+  don't implement (avoids PipeWire/GStreamer bindings for what would
+  otherwise just be a one-shot geometry read). Not attempted further given
+  the added uncertainty of a second screen-cast session competing with
+  `gnome-remote-desktop`'s own in a headless RDP topology.
+- **Consequence for `screenshot`**: since window position can't be trusted,
+  `_screenshot()` returns the **full, uncropped screen** rather than
+  cropping to (unreliable) frame extents — cropping previously produced
+  confidently-wrong images (captured an unrelated window at the coordinates
+  AT-SPI claimed, twice, in two different tests). Callers must visually
+  locate the target app in the returned image.
+- **Consequence for `click_element`**: the position-based click fallback
+  (used only when an element has no working `Action` interface) computes
+  its target the same way (`extents.x + width/2`) and is very likely
+  equally unreliable — **not yet confirmed broken in practice** since every
+  button tested so far had a working `Action` interface and never needed
+  this fallback path.
+
+**Linux — key/type primitives**
+
+- `linux_wayland.py`'s `_key_event(keysym, down)` is the shared primitive
+  `linux_common.py`'s character-by-character `type_into` fallback calls into
+  (via `keysym_for_char`) — any new display-server backend must implement
+  this same seam.
+
+**Linux — app launch (`launch_cmd`)**
+
+- No `open -a` equivalent. `linux_common.py._launch` tries a matching
+  `.desktop` entry first (via `Gio.AppInfo`), then falls back to treating
+  `app_name` as a literal executable on `$PATH`. Pass `launch_cmd` (CLI:
+  `--launch-cmd`) to override both when neither matches what should actually
+  be run.
+
 ## Adding new tools
 
-Add a method to `_dispatch` in `gui_scope.py` and a matching entry in the
-`tools` property. Keep the return contract: JSON string for text results, list
-of content blocks for images.
+Add a method to the backend contract in `backends/base.py`, implement it in
+**every** backend (`macos.py`, `linux_common.py`/`linux_wayland.py`), then
+wire it into `dispatch()` and the `tools` property in `gui_scope.py`. Keep
+the return contract: JSON string for text results, list of content blocks
+for images.
 
 ## Python version
 
