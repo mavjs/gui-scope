@@ -13,9 +13,11 @@ All tool calls must go through `uv run gui-scope` using the Bash tool.
 | Click a tab (AXRadioButton) | `uv run gui-scope click --app "Burp Suite" --role AXRadioButton --description "..."` |
 | Type into a field | `uv run gui-scope type  --app "Burp Suite" --description "..." --text "..."` |
 | Press a key | `uv run gui-scope key   --app "Burp Suite" return` |
-| Take a screenshot | `uv run gui-scope shot  --app "Burp Suite" --out /tmp/burp.png` |
+| Take a screenshot | `uv run gui-scope shot  --app "Burp Suite"` |
 
-All flags go **after** the subcommand name.
+All flags go **after** the subcommand name. `shot` saves into
+`./.gui-scope/screenshots/` by default, pruned to the 20 most recent — no
+need to pick an `--out` path yourself.
 Use `--description` for every click and type — never `--title` (Burp is Java/Swing; labels are in AXDescription, not AXTitle).
 
 The CLI/tool contract is identical on macOS and Linux (Wayland) — the same

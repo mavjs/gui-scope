@@ -101,8 +101,10 @@ uv run gui-scope type  --app "Burp Suite" --description "Address and search bar"
 # Press a key
 uv run gui-scope key   --app "Burp Suite" return
 
-# Screenshot
-uv run gui-scope shot  --app "Burp Suite" --out /tmp/burp.png
+# Screenshot — saved under ./.gui-scope/screenshots/shot-<timestamp>.png by
+# default, pruned to the 20 most recent (--keep N to change, --out FILE for
+# an explicit path instead, which disables pruning)
+uv run gui-scope shot  --app "Burp Suite"
 ```
 
 All flags go **after** the subcommand name. Run from the `gui-scope` directory
@@ -199,7 +201,27 @@ returns the full, uncropped screen, not just the target app's window** — on
 real hardware, AT-SPI never reported the window's true on-screen position
 (always `(0, 0)` regardless of where the window actually was), so cropping
 to "the app's bounds" was confidently wrong rather than just imprecise.
-Locate the target app visually in the returned image.
+Locate the target app visually in the returned image. **Tip:** once the
+target app is open, set it to "Always on Top" (most GNOME apps: right-click
+the title bar or check the window's own menu) so it stays visible and
+unoccluded in every capture instead of being covered by other windows.
+
+**Observing the automation live:**
+On any OS, it's worth keeping the target app visible on screen rather than
+minimized — that way you can watch the automation happen in real time
+alongside Claude Code, instead of only seeing it after the fact via
+`screenshot`. This is especially useful when running Claude Code in one
+window while the driven GUI is visible in another.
+
+**Screenshot storage and cleanup (all OSes):**
+`shot` with no `--out` writes a timestamped PNG under
+`./.gui-scope/screenshots/` (relative to the current working directory,
+i.e. project-scoped, not a shared `/tmp` location), and prunes that
+directory down to the `--keep` most recent files (default 20) each time —
+screenshots taken across a session accumulate without growing unbounded.
+Pass `--out FILE` for an explicit path when you want to keep one
+permanently; that opts out of pruning entirely. `.gui-scope/` is
+`.gitignore`d by default.
 
 ---
 

@@ -51,10 +51,14 @@ backend selection (and its imports) happens lazily inside
 uv run gui-scope tree  --app "Burp Suite" --depth 3
 uv run gui-scope click --app "Burp Suite" --description "Next"
 uv run gui-scope type  --app "Burp Suite" --description "..." --text "hello"
-uv run gui-scope shot  --app "Burp Suite" --out screenshot.png
+uv run gui-scope shot  --app "Burp Suite"
 ```
 
-`--app` and all flags go **after** the subcommand name, not before.
+`--app` and all flags go **after** the subcommand name, not before. `shot`
+with no `--out` writes into `./.gui-scope/screenshots/` (project-scoped
+scratch dir, `.gitignore`d), pruned to the 20 most recent files by default
+(`--keep N` to change); `--out FILE` opts out of pruning for an explicit
+path. See `cli.py`'s `cmd_shot`/`default_screenshot_dir`/`prune_screenshots`.
 
 ## Tool surface
 
@@ -238,7 +242,9 @@ Provider integration: pass `scope.tools` to the model, route responses through
   cropping to (unreliable) frame extents — cropping previously produced
   confidently-wrong images (captured an unrelated window at the coordinates
   AT-SPI claimed, twice, in two different tests). Callers must visually
-  locate the target app in the returned image.
+  locate the target app in the returned image. Mitigation worth suggesting
+  to users: set the target app "Always on Top" once it's open, so it stays
+  visible and unoccluded in every full-screen capture.
 - **Consequence for `click_element`**: the position-based click fallback
   (used only when an element has no working `Action` interface) computes
   its target the same way (`extents.x + width/2`) and is very likely

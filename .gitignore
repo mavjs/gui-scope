@@ -13,5 +13,8 @@ wheels/
 *.png
 *.jpg
 
+# gui-scope screenshot scratch dir (project-scoped, see cli.py cmd_shot)
+.gui-scope/
+
 # macOS specific
 .DS_Store

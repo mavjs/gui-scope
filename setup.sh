@@ -9,8 +9,9 @@ set -euo pipefail
 
 SCOPE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMMANDS_DIR="${HOME}/.claude/commands"
-TEMPLATE="$SCOPE_DIR/.claude/commands/burp-suite-security-testing.md"
-OUT="$COMMANDS_DIR/burp-suite-security-testing.md"
+# Both the general-purpose skill and the Burp-specific one get installed —
+# add new app-specific command files here as they're written.
+COMMAND_NAMES=("gui-scope" "burp-suite-security-testing")
 
 # Verify uv is available
 if ! command -v uv &>/dev/null; then
@@ -39,12 +40,14 @@ fi
 echo "▶ Syncing Python dependencies..."
 uv --project "$SCOPE_DIR" sync --quiet
 
-# Install the slash command, embedding the absolute install path via
-# `uv --project` so it works from any Claude Code working directory.
-echo "▶ Installing Claude Code slash command..."
+# Install the slash commands, embedding the absolute install path via
+# `uv --project` so they work from any Claude Code working directory.
+echo "▶ Installing Claude Code slash commands..."
 mkdir -p "$COMMANDS_DIR"
-sed "s|uv run gui-scope|uv --project '$SCOPE_DIR' run gui-scope|g" \
-  "$TEMPLATE" > "$OUT"
+for name in "${COMMAND_NAMES[@]}"; do
+  sed "s|uv run gui-scope|uv --project '$SCOPE_DIR' run gui-scope|g" \
+    "$SCOPE_DIR/.claude/commands/$name.md" > "$COMMANDS_DIR/$name.md"
+done
 
 echo ""
 echo "✅ Done."
@@ -68,4 +71,5 @@ fi
 
 echo ""
 echo "Then open Claude Code and type:"
-echo "   /burp-suite-security-testing"
+echo "   /gui-scope                          (drive any application)"
+echo "   /burp-suite-security-testing         (Burp Suite specific playbook)"
