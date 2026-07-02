@@ -1,6 +1,13 @@
 ---
 description: Drive any GUI application (macOS, or Linux/Wayland/X11) via the gui-scope CLI — general-purpose, not tied to one app. Use for any task that needs to click, type, or read the UI of a desktop application.
 argument-hint: '[task description, e.g. "open TextEdit and create a new document"]'
+hooks:
+  PostToolUse:
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: "uv run gui-scope hook-post-tool-use"
+          timeout: 10
 ---
 
 You are driving a GUI application via the `gui-scope` CLI in this project.
@@ -14,6 +21,7 @@ works the same way regardless of which application or OS you're targeting.
 | What you want to do | Bash command |
 |---|---|
 | See current UI state | `uv run gui-scope tree  --app "APP_NAME" --depth 3` |
+| Find a specific element without reading the whole tree | `uv run gui-scope tree --app "APP_NAME" --flat --role ROLE --query TEXT` |
 | Click a button or tab | `uv run gui-scope click --app "APP_NAME" --description "..."` |
 | Click by role (avoid ambiguous matches) | `uv run gui-scope click --app "APP_NAME" --role ROLE --description "..."` |
 | Type into a field | `uv run gui-scope type  --app "APP_NAME" --description "..." --text "..."` |
@@ -25,6 +33,18 @@ application the user names — this skill isn't tied to any one app.
 `shot` with no `--out` saves into `./.gui-scope/screenshots/` (pruned
 automatically to the 20 most recent) — don't pass `--out` unless you
 specifically need to keep one screenshot permanently at a fixed path.
+
+`tree --flat` prints one line per interactive element (`role`, `title`,
+`desc`, `path`) instead of the full nested tree — reach for it with
+`--role`/`--query` instead of eyeballing a large `tree` dump to find one
+specific element (e.g. a table row, a menu item once its menu is open).
+
+**Auto-refreshed state after actions**: this skill's `click`/`type`/`key`
+Bash calls automatically get a follow-up flat tree of the target app
+injected as extra context once they complete (via this skill's own
+`PostToolUse` hook — see frontmatter). You don't need to manually re-run
+`tree` after every action just to see whether it worked or a dialog
+appeared; check that injected context first.
 
 ---
 

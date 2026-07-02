@@ -298,8 +298,24 @@ class LinuxCommonBackend(GUIScopeBackend):
             if action_iface is not None:
                 try:
                     n = action_iface.get_n_actions()
-                    # index 0 is conventionally the default action — try it first
+                    # Index 0 is *usually* the default/primary action, but
+                    # GTK tree-table cells (e.g. Thunar's file list) are a
+                    # confirmed exception: they expose "expand or contract"
+                    # at index 0 and the actual open/click behavior as a
+                    # separate "activate" action — do_action(0) there
+                    # returns True (successfully toggles a nonexistent
+                    # expander on a leaf row) without doing what a real
+                    # click does. Prefer an action literally named
+                    # "activate" if one exists, then fall back to trying
+                    # every action by index.
                     order = list(range(n))
+                    try:
+                        names = [action_iface.get_action_name(i) for i in order]
+                        if "activate" in names:
+                            order.remove(names.index("activate"))
+                            order.insert(0, names.index("activate"))
+                    except Exception:
+                        pass
                     for i in order:
                         try:
                             if action_iface.do_action(i):
@@ -341,7 +357,30 @@ class LinuxCommonBackend(GUIScopeBackend):
         edit_iface = _iface(acc, "get_editable_text_iface")
         if edit_iface is not None:
             try:
-                edit_iface.set_text_contents(text)
+                # insert_text at the caret, not set_text_contents — the latter
+                # replaces the *entire* buffer, which silently destroys any
+                # text already in the field (confirmed on real hardware:
+                # typing a second line into Mousepad after the first wiped the
+                # first line out). Mirrors macOS's typeString(), which types
+                # at the cursor rather than replacing the field's value.
+                text_iface = _iface(acc, "get_text_iface")
+                offset = None
+                if text_iface is not None:
+                    try:
+                        offset = text_iface.get_caret_offset()
+                    except Exception:
+                        offset = None
+                if offset is None or offset < 0:
+                    try:
+                        offset = text_iface.get_character_count() if text_iface is not None else 0
+                    except Exception:
+                        offset = 0
+                edit_iface.insert_text(offset, text, len(text))
+                if text_iface is not None:
+                    try:
+                        text_iface.set_caret_offset(offset + len(text))
+                    except Exception:
+                        pass
                 return True
             except Exception:
                 pass

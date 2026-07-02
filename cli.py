@@ -2,12 +2,18 @@
 #
 # usage:
 #   uv run gui-scope tree  --app "Burp Suite" [--depth 4]
+#   uv run gui-scope tree  --app "Burp Suite" --flat [--role ROLE] [--query TEXT]
 #   uv run gui-scope click --app "Burp Suite" --description "Next"
 #   uv run gui-scope type  --app "Burp Suite" --description "..." --text "hello"
 #   uv run gui-scope shot  --app "Burp Suite" [--out FILE] [--keep N]
 #
 # --app and --no-launch go after the subcommand name.
 # The app is launched automatically if not already running.
+#
+# `tree --flat` prints one role/title/desc/path line per interactive element
+# instead of the full nested JSON tree — much shorter, and --role/--query
+# narrow it further by substring. Replaces writing a one-off script to grep
+# the nested JSON for a specific element.
 #
 # `shot` with no --out writes into a project-scoped scratch directory
 # (./.gui-scope/screenshots/, relative to the current working directory) with
@@ -19,6 +25,7 @@
 import argparse
 import base64
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +33,12 @@ from pathlib import Path
 from gui_scope import GUIScope
 
 DEFAULT_SCREENSHOT_KEEP = 20
+
+# Matches the real invocation shape of a mutating gui-scope call regardless
+# of what precedes it on the command line (uv run, uv --project ... run,
+# timeout N, etc.) — the verb always immediately follows "gui-scope".
+_GUI_SCOPE_VERB_RE = re.compile(r"gui-scope\s+(click|type|key)\b")
+_APP_VALUE_RE = re.compile(r"""--app\s+(?:"([^"]*)"|'([^']*)'|(\S+))""")
 
 
 def default_screenshot_dir() -> Path:
@@ -41,8 +54,19 @@ def prune_screenshots(directory: Path, keep: int) -> None:
 
 
 def cmd_tree(scope: GUIScope, args: argparse.Namespace) -> None:
-    result = scope.dispatch("get_tree", {"max_depth": args.depth})
-    print(result)
+    inputs = {"max_depth": args.depth}
+    if args.flat:
+        inputs["flat"] = True
+        if args.role:  inputs["role"]  = args.role
+        if args.query: inputs["query"] = args.query
+
+    result = scope.dispatch("get_tree", inputs)
+
+    if args.flat:
+        for node in json.loads(result):
+            print(f"{node['role']}\t{node['title']}\t{node['desc']}\t{node['path']}")
+    else:
+        print(result)
 
 
 def cmd_click(scope: GUIScope, args: argparse.Namespace) -> None:
@@ -101,6 +125,51 @@ def cmd_shot(scope: GUIScope, args: argparse.Namespace) -> None:
     sys.exit("error: no image block in screenshot result")
 
 
+def cmd_hook_post_tool_use() -> None:
+    """
+    PostToolUse hook handler — see the `hooks:` frontmatter block in
+    .claude/commands/*.md. Invoked by Claude Code (not a human) with the
+    hook-input JSON on stdin after a Bash tool call completes. If that call
+    was a gui-scope click/type/key, re-fetch a flat tree for the target app
+    and emit it as additionalContext, so the model sees the result of the
+    action (a dialog that appeared, text that landed) without a separate
+    manual `tree` call.
+
+    Must never raise, never exit non-zero, and print nothing on the
+    non-matching/failure path (wrong command, app not reachable, etc.) —
+    this runs alongside the real tool result and must never interfere
+    with it or slow down unrelated Bash calls.
+    """
+    try:
+        payload = json.loads(sys.stdin.read())
+        command = payload.get("tool_input", {}).get("command", "")
+
+        verb_match = _GUI_SCOPE_VERB_RE.search(command)
+        if not verb_match:
+            return
+
+        app_match = _APP_VALUE_RE.search(command)
+        if not app_match:
+            return
+        app_name = next(g for g in app_match.groups() if g is not None)
+
+        scope = GUIScope(app_name, auto_launch=False)
+        try:
+            flat_tree = scope.dispatch("get_tree", {"max_depth": 6, "flat": True})
+        finally:
+            scope.close()
+
+        context = f"gui-scope: current UI state for '{app_name}' after {verb_match.group(1)}:\n{flat_tree}"
+        print(json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": context,
+            }
+        }))
+    except Exception:
+        return
+
+
 def build_parser() -> argparse.ArgumentParser:
     # Shared flags inherited by every subcommand.
     # Placing them here means they go *after* the subcommand name:
@@ -134,6 +203,12 @@ def build_parser() -> argparse.ArgumentParser:
     # tree
     p = sub.add_parser("tree", parents=[shared], help="Print the accessibility tree as JSON")
     p.add_argument("--depth", type=int, default=6, help="Max depth (default: 6)")
+    p.add_argument(
+        "--flat", action="store_true",
+        help="Print a flat role/title/desc/path list of interactive elements instead of nested JSON",
+    )
+    p.add_argument("--role",  default=None, help="With --flat, substring filter on role")
+    p.add_argument("--query", default=None, help="With --flat, substring filter on title+desc")
 
     # click
     p = sub.add_parser("click", parents=[shared], help="Click a UI element")
@@ -167,11 +242,23 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"How many screenshots to retain in the default scratch dir (default: {DEFAULT_SCREENSHOT_KEEP})",
     )
 
+    # hook-post-tool-use — internal, invoked by Claude Code via the `hooks:`
+    # frontmatter block in .claude/commands/*.md, not by a human. No shared
+    # flags: it takes no CLI arguments and reads everything from stdin.
+    sub.add_parser("hook-post-tool-use", help=argparse.SUPPRESS)
+
     return root
 
 
 def main() -> None:
     args = build_parser().parse_args()
+
+    if args.cmd == "hook-post-tool-use":
+        # No --app flag exists for this subcommand (it reads the target app
+        # from the hook-input JSON on stdin) — skip the shared GUIScope
+        # construction below entirely.
+        cmd_hook_post_tool_use()
+        return
 
     try:
         scope = GUIScope(

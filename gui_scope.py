@@ -20,6 +20,54 @@ import base64
 
 from backends import get_backend_class
 
+# Substring keywords checked against a node's role (case-insensitive) to decide
+# whether it's worth surfacing in flat/filtered tree output even if it has no
+# title/desc of its own. Substring rather than exact-match because backends
+# use very different role vocabularies for the same concept — macOS reports
+# raw AXRole strings ("AXButton", "AXMenuItem"), AT-SPI reports lowercase
+# space-separated names ("push button", "menu item") — a substring check on
+# keywords like "button"/"menu"/"item" matches both without listing every
+# backend's exact spelling twice.
+_INTERACTIVE_ROLE_KEYWORDS = (
+    "button", "menu", "item", "tab", "text", "entry", "link", "check",
+    "radio", "cell", "list", "icon", "toggle", "field",
+)
+
+
+def _is_interactive_role(role: str) -> bool:
+    r = role.lower()
+    return any(kw in r for kw in _INTERACTIVE_ROLE_KEYWORDS)
+
+
+def _flatten_tree(tree: dict, role: str | None = None, query: str | None = None) -> list[dict]:
+    """
+    Walk the nested get_tree() dict and return a flat list of
+    {"role", "title", "desc", "path"} for nodes worth acting on — an
+    interactive-looking role, or any non-empty title/desc — instead of the
+    full nested structure. `role`/`query` are optional case-insensitive
+    substring filters (role against role, query against title+desc).
+    """
+    role_needle = role.lower() if role else None
+    query_needle = query.lower() if query else None
+    out: list[dict] = []
+
+    def walk(node: dict, path: str) -> None:
+        node_role = node.get("role", "") or ""
+        title = node.get("title", "") or ""
+        desc = node.get("desc", "") or ""
+
+        if _is_interactive_role(node_role) or title or desc:
+            role_ok = role_needle is None or role_needle in node_role.lower()
+            query_ok = query_needle is None or query_needle in title.lower() or query_needle in desc.lower()
+            if role_ok and query_ok:
+                out.append({"role": node_role, "title": title, "desc": desc, "path": path})
+
+        for i, child in enumerate(node.get("children", []) or []):
+            walk(child, f"{path}/{node_role}[{i}]")
+
+    walk(tree, "")
+    return out
+
 
 class GUIScope:
     """
@@ -60,7 +108,24 @@ class GUIScope:
                             "type": "integer",
                             "description": "Depth limit (default 6). Use 3-4 for a quick overview.",
                             "default": 6,
-                        }
+                        },
+                        "flat": {
+                            "type": "boolean",
+                            "description": (
+                                "Return a flat list of {role, title, desc, path} for "
+                                "interactive/labeled elements instead of the full nested "
+                                "tree — much shorter, and directly filterable via role/query."
+                            ),
+                            "default": False,
+                        },
+                        "role": {
+                            "type": "string",
+                            "description": "With flat=true, case-insensitive substring filter on role.",
+                        },
+                        "query": {
+                            "type": "string",
+                            "description": "With flat=true, case-insensitive substring filter on title+desc.",
+                        },
                     },
                 },
             },
@@ -130,7 +195,11 @@ class GUIScope:
         Your agent loop decides how to package this into the provider's tool_result format.
         """
         if name == "get_tree":
-            return json.dumps(self._backend._get_tree(inputs.get("max_depth", 6)), indent=2)
+            tree = self._backend._get_tree(inputs.get("max_depth", 6))
+            if inputs.get("flat"):
+                flat = _flatten_tree(tree, role=inputs.get("role"), query=inputs.get("query"))
+                return json.dumps(flat)
+            return json.dumps(tree, indent=2)
 
         elif name == "click_element":
             result = self._backend._click(

@@ -51,6 +51,7 @@ backend selection (and its imports) happens lazily inside
 
 ```bash
 uv run gui-scope tree  --app "Burp Suite" --depth 3
+uv run gui-scope tree  --app "Burp Suite" --flat --role ROLE --query TEXT
 uv run gui-scope click --app "Burp Suite" --description "Next"
 uv run gui-scope type  --app "Burp Suite" --description "..." --text "hello"
 uv run gui-scope shot  --app "Burp Suite"
@@ -62,13 +63,21 @@ scratch dir, `.gitignore`d), pruned to the 20 most recent files by default
 (`--keep N` to change); `--out FILE` opts out of pruning for an explicit
 path. See `cli.py`'s `cmd_shot`/`default_screenshot_dir`/`prune_screenshots`.
 
+`tree --flat` returns a flat `role`/`title`/`desc`/`path` list of
+interactive/labeled elements instead of the full nested tree —
+`--role`/`--query` narrow it by case-insensitive substring. This exists
+specifically to replace writing a one-off Python script to grep the nested
+JSON for one element (a recurring pattern before this existed — e.g.
+finding a specific file row in a `GtkTreeView`-based file manager listing).
+See `gui_scope.py`'s `_flatten_tree`/`_is_interactive_role`.
+
 ## Tool surface
 
 `GUIScope` exposes five methods via `dispatch(name, inputs)`:
 
 | Tool | Returns |
 |---|---|
-| `get_tree` | JSON string of the accessibility tree |
+| `get_tree` | JSON string of the accessibility tree (or a flat array if `flat: true`, see above) |
 | `click_element` | `{"ok": bool, "result": "ok" \| "not_found" \| "action_failed"}` |
 | `type_into` | `{"ok": bool}` |
 | `press_key` | `{"ok": bool}` |
@@ -327,6 +336,34 @@ Provider integration: pass `scope.tools` to the model, route responses through
   `app_name` as a literal executable on `$PATH`. Pass `launch_cmd` (CLI:
   `--launch-cmd`) to override both when neither matches what should actually
   be run.
+
+**`PostToolUse` hook — auto-refreshes state after actions (skill-scoped, not global)**
+
+- `.claude/commands/gui-scope.md` and `.claude/commands/burp-suite-security-testing.md`
+  each declare a `hooks: PostToolUse: [...]` block in their YAML frontmatter,
+  pointing at `uv run gui-scope hook-post-tool-use`. Per Claude Code's
+  "Configuration Levels" (Skill/Agent frontmatter → scoped to "while
+  active"), this only fires while that skill is actually in use in the
+  current session — **not** a global `~/.claude/settings.json` hook running
+  on every Bash call in every project. It requires zero install-script
+  changes: `setup.sh`'s existing `sed` templating (`uv run gui-scope` → `uv
+  --project '$SCOPE_DIR' run gui-scope`) already rewrites the frontmatter's
+  command line the same way it rewrites the rest of the file.
+- `cli.py`'s `cmd_hook_post_tool_use` reads the hook-input JSON from stdin
+  (not CLI flags), checks whether the just-completed Bash command was a
+  `gui-scope click/type/key` call, and if so calls `dispatch("get_tree",
+  {"flat": True})` **in-process** (no subprocess) for the target app,
+  emitting the result as `additionalContext`. This directly replaces
+  manually re-running `tree`/`shot` after every action to see what
+  happened — a pattern that recurred constantly before this existed.
+- Deliberately fails silent/exit-0 on anything unexpected (app already
+  closed, wrong project, malformed input) — this runs alongside the real
+  tool result on every matching Bash call, so it must never block, error,
+  or visibly interfere with it.
+- No new dependency: pure Python (`json`/`re`), reuses the existing
+  `GUIScope`/`dispatch()` path — deliberately not a standalone bash+`jq`
+  script (an earlier draft of this design), so it's exercised by the same
+  code as everything else and needs no separate install step.
 
 ## Adding new tools
 

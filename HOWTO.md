@@ -89,6 +89,9 @@ verify or debug what Claude is doing:
 # See the current UI state
 uv run gui-scope tree  --app "Burp Suite" --depth 3
 
+# Find one specific element instead of reading a big tree dump
+uv run gui-scope tree  --app "Burp Suite" --flat --role AXButton --query "Send"
+
 # Click a button (always use --description for Java/Swing apps)
 uv run gui-scope click --app "Burp Suite" --description "Next"
 
@@ -110,6 +113,16 @@ uv run gui-scope shot  --app "Burp Suite"
 All flags go **after** the subcommand name. Run from the `gui-scope` directory
 (or from anywhere after `setup.sh` has been run, since the slash command embeds
 the absolute install path).
+
+**Auto-refreshed state (no setup needed):** both `/gui-scope` and
+`/burp-suite-security-testing` declare a `PostToolUse` hook directly in
+their own frontmatter, scoped to that skill's session — it automatically
+re-fetches a flat tree of the target app after every `click`/`type`/`key`
+and surfaces it as extra context, so Claude doesn't need to manually re-run
+`tree`/`shot` after every action just to see whether it worked. This
+travels with the skill file itself (`setup.sh` already copies and
+templates it) — nothing to install separately, and it never fires outside
+an active `/gui-scope`/`/burp-suite-security-testing` session.
 
 ---
 

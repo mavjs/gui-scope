@@ -1,6 +1,13 @@
 ---
 description: Drive Burp Suite's GUI for authorised web application security testing via the gui-scope CLI — Burp-specific navigation patterns and Java/Swing quirks baked in.
 argument-hint: '[task description, e.g. "start Burp, open the built-in browser, and navigate to https://target.example.com/"]'
+hooks:
+  PostToolUse:
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: "uv run gui-scope hook-post-tool-use"
+          timeout: 10
 ---
 
 You are helping with **authorised web application security testing** using Burp Suite.
@@ -24,6 +31,13 @@ All flags go **after** the subcommand name. `shot` saves into
 `./.gui-scope/screenshots/` by default, pruned to the 20 most recent — no
 need to pick an `--out` path yourself.
 Use `--description` for every click and type — never `--title` (Burp is Java/Swing; labels are in AXDescription, not AXTitle).
+
+Use `tree --flat --role ROLE --query TEXT` instead of a full `tree` dump to
+find one specific element (e.g. a JTabbedPane tab, a Repeater button).
+`click`/`type`/`key` calls also auto-inject a follow-up flat tree of Burp's
+state as context once they complete (this skill's own `PostToolUse` hook) —
+check that before manually re-running `tree` to see whether an action
+worked.
 
 The CLI/tool contract is identical on macOS and Linux (Wayland or X11) — the
 same `--role`/`--title`/`--description` flags work regardless of OS. On Linux the
