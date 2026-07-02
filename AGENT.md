@@ -12,10 +12,10 @@ from `XDG_SESSION_TYPE`/`$DISPLAY`.
 ## Documentation conventions
 
 Keep every markdown file an agent needs to read (`AGENT.md`/`CLAUDE.md`,
-`SKILL.md`, `HOWTO.md`, `README.md`, `.claude/commands/*.md`) under 500
-lines. If one grows past that, split it rather than letting it keep
-growing — e.g. move a large "what we learned" section into its own doc and
-link to it, instead of appending indefinitely.
+`HOWTO.md`, `README.md`, `.claude/commands/*.md`) under 500 lines. If one
+grows past that, split it rather than letting it keep growing — e.g. move a
+large "what we learned" section into its own doc and link to it, instead of
+appending indefinitely.
 
 ## Structure
 
@@ -30,8 +30,7 @@ gui-scope/
 │   ├── linux_x11.py             # XTEST/Xlib input + screenshot, EWMH window activation
 │   └── wayland_token.py          # caches the RemoteDesktop consent token
 ├── cli.py                    # argparse CLI, installed as the `gui-scope` console script
-├── pyproject.toml            # deps + [project.scripts] entry point, platform-gated via sys_platform markers
-└── SKILL.md                  # prompt document for injecting into Claude's context
+└── pyproject.toml            # deps + [project.scripts] entry point, platform-gated via sys_platform markers
 ```
 
 ## Backend architecture

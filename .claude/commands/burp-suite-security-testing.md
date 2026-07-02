@@ -40,10 +40,23 @@ check that before manually re-running `tree` to see whether an action
 worked.
 
 The CLI/tool contract is identical on macOS and Linux (Wayland or X11) — the
-same `--role`/`--title`/`--description` flags work regardless of OS. On Linux the
-"always use description" rule below is unverified (see SKILL.md's Linux
-note) — fall back to `--title` if `--description` keeps returning
-`not_found`.
+same `--role`/`--title`/`--description` flags work regardless of OS. On Linux
+the "always use description" rule below is unverified — fall back to
+`--title` if `--description` keeps returning `not_found`.
+
+**Linux note — Burp Suite is currently NOT usable on Linux.** Confirmed on
+real hardware (CentOS Stream 10/GNOME/Wayland, 2026-07): a running Burp
+Suite process never registers with AT-SPI at all, because Java's
+accessibility bridge (`java-atk-wrapper`) isn't active. That package isn't
+packaged for EL10/current EPEL, and even where available it must be
+manually wired into the *specific* JRE an app uses — Burp bundles its own
+private JRE, so this can't be fixed with a simple system package install.
+Everything in this skill describing Burp's AX/AT-SPI tree therefore does
+not currently apply on Linux — treat this skill as macOS-only until that's
+resolved. The rest of GUIScope's Linux backend (AT-SPI tree walk, click,
+type, press_key, screenshot) is confirmed working end-to-end against
+native GTK apps — the blocker is Java accessibility support specifically,
+not the backend.
 
 ---
 

@@ -141,8 +141,7 @@ separately (as Burp Suite's Java/Swing UI did), write a new
 `.claude/commands/<your-app>.md` following the structure of
 [`burp-suite-security-testing.md`](.claude/commands/burp-suite-security-testing.md),
 add it to `COMMAND_NAMES` in `setup.sh`, and re-run `bash setup.sh` to
-install it. See [`SKILL.md`](SKILL.md) for the Burp-specific reference and
-[`HOWTO.md`](HOWTO.md) for the full setup guide.
+install it. See [`HOWTO.md`](HOWTO.md) for the full setup guide.
 
 ---
 
