@@ -25,8 +25,8 @@ All flags go **after** the subcommand name. `shot` saves into
 need to pick an `--out` path yourself.
 Use `--description` for every click and type — never `--title` (Burp is Java/Swing; labels are in AXDescription, not AXTitle).
 
-The CLI/tool contract is identical on macOS and Linux (Wayland) — the same
-`--role`/`--title`/`--description` flags work regardless of OS. On Linux the
+The CLI/tool contract is identical on macOS and Linux (Wayland or X11) — the
+same `--role`/`--title`/`--description` flags work regardless of OS. On Linux the
 "always use description" rule below is unverified (see SKILL.md's Linux
 note) — fall back to `--title` if `--description` keeps returning
 `not_found`.

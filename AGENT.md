@@ -5,8 +5,9 @@
 Process-scoped GUI automation via the OS accessibility API. Gives an agent
 read/write access to a single application — no shell, no other windows.
 
-macOS is fully supported. Linux support targets Wayland first (GNOME/mutter,
-via xdg-desktop-portal); X11 is a planned follow-up, not yet implemented.
+macOS is fully supported. Linux supports both Wayland (GNOME/mutter, via
+xdg-desktop-portal) and X11 (via XTEST/Xlib) — session type is auto-detected
+from `XDG_SESSION_TYPE`/`$DISPLAY`.
 
 ## Documentation conventions
 
@@ -26,6 +27,7 @@ gui-scope/
 │   ├── macos.py               # AX/atomacos/Quartz backend
 │   ├── linux_common.py         # AT-SPI2 tree/find/click/type — shared X11+Wayland
 │   ├── linux_wayland.py         # xdg-desktop-portal input + screenshot
+│   ├── linux_x11.py             # XTEST/Xlib input + screenshot, EWMH window activation
 │   └── wayland_token.py          # caches the RemoteDesktop consent token
 ├── cli.py                    # argparse CLI, installed as the `gui-scope` console script
 ├── pyproject.toml            # deps + [project.scripts] entry point, platform-gated via sys_platform markers
@@ -147,7 +149,8 @@ Provider integration: pass `scope.tools` to the model, route responses through
   relative-move workaround (`NotifyPointerMotion` to a clamped corner, then a
   relative move to the target). This is best-effort — verify precision,
   especially on multi-monitor or HiDPI-scaled setups, before relying on it
-  for small UI targets.
+  for small UI targets. X11 does not have this limitation — see the X11
+  section below.
 
 **Linux — AT-SPI field mapping (still unverified for Burp/Java specifically)**
 
@@ -254,10 +257,68 @@ Provider integration: pass `scope.tools` to the model, route responses through
 
 **Linux — key/type primitives**
 
-- `linux_wayland.py`'s `_key_event(keysym, down)` is the shared primitive
-  `linux_common.py`'s character-by-character `type_into` fallback calls into
-  (via `keysym_for_char`) — any new display-server backend must implement
-  this same seam.
+- Each display-server backend's `_key_event(keysym, down)` is the shared
+  primitive `linux_common.py`'s character-by-character `type_into` fallback
+  calls into (via `keysym_for_char`); `_press_key` itself is a concrete
+  method on `LinuxCommonBackend` built on top of that seam, not something
+  each backend reimplements — only `_mouse_click`/`_key_event`/`_screenshot`
+  are display-server-specific.
+
+**Linux/X11 — no portal, no consent dialog, true absolute positioning (CONFIRMED working)**
+
+- Confirmed on real hardware (Kali/XFCE/xfwm4, 2026-07-02): `LinuxX11Backend`
+  uses the XTEST extension (via python-xlib) directly against the X server —
+  no `xdg-desktop-portal`, no human consent dialog, no restore-token cache.
+  `XTestFakeMotionEvent`/`XTestFakeButtonEvent`/`XTestFakeKeyEvent` give true
+  absolute pointer positioning and key synthesis, unlike Wayland's
+  corner-warp workaround.
+- AT-SPI's `SCREEN`-coordinate extents are real absolute desktop coordinates
+  on X11 — confirmed by cross-checking against `xdotool getwindowgeometry`
+  (matched to within a window-decoration inset). This is the opposite of the
+  Wayland finding above (`(0, 0)` always) — so `_screenshot()` on X11 crops
+  to the app's frame instead of falling back to the full screen.
+- Unmapped keysyms (e.g. a Unicode character outside the active keyboard
+  layout) are handled via the same scratch-keycode remap trick `xdotool`
+  uses: bind the keysym to the highest keycode with
+  `XChangeKeyboardMapping`, then synthesize against that keycode.
+
+**Linux/X11 — window must be raised + focused before input or screenshot (CONFIRMED bug, fixed)**
+
+- Confirmed on real hardware: X11 input synthesis and screen capture are
+  purely hardware/screen-position based — **not** routed through the
+  accessibility tree the way AT-SPI's `do_action()` is. Reproduced directly:
+  with the scoped app's window covered by a terminal, `click_element`'s
+  position-fallback and `screenshot`'s crop both silently operated on the
+  terminal instead, because a mouse click and a screen-region capture at a
+  given (x, y) hit whichever window is actually topmost there — the AT-SPI
+  tree has no bearing on it. Keyboard focus turned out to be independent of
+  stacking order (a covered window can still hold input focus), which is
+  why `type_into`'s keystroke fallback partially worked while the click and
+  screenshot did not — an inconsistency that would have been very confusing
+  to debug blind.
+- Fixed via `_ensure_active()` in `linux_x11.py`: before every
+  `_mouse_click`/`_key_event`/`_screenshot` call, resolve the scoped app's
+  top-level window (match `_NET_WM_PID` against the AT-SPI pid across
+  `_NET_CLIENT_LIST`) and raise + focus it with an EWMH `_NET_ACTIVE_WINDOW`
+  client message if it isn't already active. No-ops cheaply once the window
+  is already active (single property read), so it's safe to call on every
+  keystroke during `type_into`'s char-by-char fallback.
+- Depends on an EWMH-compliant window manager (xfwm4, mutter, KWin, most
+  others all qualify). Without EWMH support `_ensure_active()` silently
+  no-ops — input still works if the window already happens to be topmost.
+
+**Linux — launching an app leaks stdio fds into a shell pipeline (CONFIRMED bug, fixed)**
+
+- Confirmed on real hardware: `linux_common.py._launch`'s literal-executable
+  fallback used a bare `subprocess.Popen([app_name])`, which inherits the
+  parent's stdout/stderr. When gui-scope itself is run inside a shell
+  pipeline (e.g. `gui-scope tree --app foo | head`) and `foo` isn't running
+  yet, the newly-launched long-lived GUI app holds that pipe open for its
+  entire lifetime — `uv run gui-scope` exits, but the pipe's write end never
+  closes, so `head` (and any other downstream reader) blocks forever waiting
+  for an EOF that never comes. Fixed by routing both the literal-executable
+  and `launch_cmd` spawn paths through `_spawn_detached()`, which redirects
+  stdin/stdout/stderr to `DEVNULL` and sets `start_new_session=True`.
 
 **Linux — app launch (`launch_cmd`)**
 
@@ -270,10 +331,10 @@ Provider integration: pass `scope.tools` to the model, route responses through
 ## Adding new tools
 
 Add a method to the backend contract in `backends/base.py`, implement it in
-**every** backend (`macos.py`, `linux_common.py`/`linux_wayland.py`), then
-wire it into `dispatch()` and the `tools` property in `gui_scope.py`. Keep
-the return contract: JSON string for text results, list of content blocks
-for images.
+**every** backend (`macos.py`, `linux_common.py`/`linux_wayland.py`/
+`linux_x11.py`), then wire it into `dispatch()` and the `tools` property in
+`gui_scope.py`. Keep the return contract: JSON string for text results, list
+of content blocks for images.
 
 ## Python version
 

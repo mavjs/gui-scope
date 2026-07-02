@@ -2,7 +2,7 @@
 
 > [!WARNING]
 > This is a AI created application to show case how using the operating system's Accessibility API can allow us to create a tool call without using an mcp server.
-> Testing so far has been minimal: Burp Suite on macOS, and a native GTK app (gnome-text-editor) on Linux/Wayland. Several things are confirmed working end-to-end, but treat this as early and narrowly verified rather than production-ready — see AGENT.md/HOWTO.md for the specific confirmed-vs-open-question findings.
+> Testing so far has been minimal: Burp Suite on macOS, a native GTK app (gnome-text-editor) on Linux/Wayland, and a native GTK app (mousepad) on Linux/X11. Several things are confirmed working end-to-end, but treat this as early and narrowly verified rather than production-ready — see AGENT.md/HOWTO.md for the specific confirmed-vs-open-question findings.
 
 Process-scoped GUI automation via the OS accessibility API. Gives Claude Code
 read/write access to a single application — no shell escape, no other windows.
@@ -13,8 +13,8 @@ accessibility tree, click/type/screenshot through it) isn't Burp-specific at
 all — it works with any application. It's since grown into a general-purpose
 GUI automation tool, with the Burp-specific playbook kept as one example of
 an app-specific skill built on top of the same generic CLI. macOS is fully
-supported; Linux support targets Wayland first (GNOME/mutter, via
-xdg-desktop-portal) — X11 is a planned follow-up, not yet implemented.
+supported; Linux supports both Wayland (GNOME/mutter, via xdg-desktop-portal)
+and X11 (XFCE/xfwm4 and others, via XTEST) — session type is auto-detected.
 
 ---
 
@@ -96,31 +96,33 @@ for an explicit path instead, which disables pruning.
                                               ┌───────────────┴───────────────┐
                                               ▼                               ▼
                                      macOS: atomacos/Quartz        Linux: AT-SPI2 (gi.Atspi)
-                                                                    + xdg-desktop-portal (Wayland)
+                                                          + xdg-desktop-portal (Wayland) or XTEST/Xlib (X11)
 ```
 
 `gui_scope.py` is a thin facade over a per-OS backend (`backends/`). On
 macOS, `backends/macos.py` finds the target process by PID and dispatches
 actions via the Accessibility API with a Quartz fallback for Java/Swing
 buttons that ignore `AXPress`. On Linux, `backends/linux_common.py` walks
-the AT-SPI2 tree over D-Bus, and `backends/linux_wayland.py` synthesizes
+the AT-SPI2 tree over D-Bus; `backends/linux_wayland.py` synthesizes
 input/screenshots via `xdg-desktop-portal`'s RemoteDesktop and Screenshot
-interfaces (X11 support is planned but not yet implemented).
+interfaces, and `backends/linux_x11.py` does the same directly against the X
+server via the XTEST extension.
 
 ---
 
 ## Requirements
 
 - **macOS** — Accessibility permission granted to your terminal; or
-- **Linux (Wayland only, e.g. GNOME/mutter)** — targeting CentOS Stream 10,
-  Ubuntu LTS, and Debian-based distros (Kali included); X11 is not yet
-  supported. Needs an active, logged-in graphical session with
-  `xdg-desktop-portal` + `xdg-desktop-portal-gnome` running, AT-SPI enabled
+- **Linux (Wayland or X11)** — targeting CentOS Stream 10, Ubuntu LTS, and
+  Debian-based distros (Kali included). Both need AT-SPI enabled
   (`java-atk-wrapper` for Java/Swing apps like Burp Suite — currently
-  unreachable via AT-SPI regardless, see `HOWTO.md`), and system dev headers
+  unreachable via AT-SPI regardless, see `HOWTO.md`) and system dev headers
   for `PyGObject`/`pycairo` to build (`setup.sh` prints the exact packages
-  per distro). This backend cannot run headless — portals require a live
-  desktop session. See [`HOWTO.md`](HOWTO.md) for full setup steps.
+  per distro). Wayland additionally needs an active, logged-in graphical
+  session with `xdg-desktop-portal` + `xdg-desktop-portal-gnome` running,
+  and cannot run headless; X11 additionally needs `python3-xlib` (installed
+  automatically) and an EWMH-compliant window manager. See
+  [`HOWTO.md`](HOWTO.md) for full setup steps.
 - [uv](https://docs.astral.sh/uv/) — manages Python 3.12 and all deps automatically
 - [Claude Code](https://claude.ai/code)
 - Target application installed

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# install.sh — one-command setup for gui-scope on a fresh machine (macOS,
-# or Linux/Wayland — see AGENT.md/HOWTO.md for X11's current status)
+# install.sh — one-command setup for gui-scope on a fresh machine
+# (macOS, or Linux/Wayland or Linux/X11 — see AGENT.md/HOWTO.md)
 #
 # curl -fsSL https://raw.githubusercontent.com/YOUR_USER/gui-scope/main/install.sh | sh
 #
@@ -37,8 +37,9 @@ fi
 
 if [[ "$(uname -s)" == "Linux" ]]; then
   echo "▶ Linux prerequisites (not installable by this script — install via your package manager):"
-  echo "   - xdg-desktop-portal + xdg-desktop-portal-gnome (Wayland only; X11 not yet supported)"
-  echo "   - PyGObject/pycairo build headers, e.g. on dnf-based distros (CentOS Stream/Fedora/RHEL):"
+  echo "   - xdg-desktop-portal + xdg-desktop-portal-gnome (Wayland sessions only)"
+  echo "   - PyGObject/pycairo build headers (needed on both Wayland and X11), e.g. on"
+  echo "     dnf-based distros (CentOS Stream/Fedora/RHEL):"
   echo "       sudo dnf install -y cairo-devel cairo-gobject-devel glib2-devel python3-devel"
   echo "     (girepository-2.0.pc ships inside glib2-devel on GLib 2.80+, no separate"
   echo "     gobject-introspection-devel package needed)"
@@ -47,6 +48,7 @@ if [[ "$(uname -s)" == "Linux" ]]; then
   echo "         python3-dev pkg-config"
   echo "   - gir1.2-atspi-2.0 (or distro equivalent, usually pulled in with at-spi2-core)"
   echo "   - java-atk-wrapper (only needed for Java/Swing apps like Burp Suite)"
+  echo "   - X11 sessions only: python3-xlib is installed automatically via pyproject.toml"
 fi
 
 # ── 3 + 4. Delegate to setup.sh inside the cloned repo ───────────────────────

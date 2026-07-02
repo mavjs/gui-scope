@@ -1,11 +1,13 @@
-# gui_scope.py — process-scoped GUI automation shim, macOS + Linux (Wayland)
+# gui_scope.py — process-scoped GUI automation shim, macOS + Linux (Wayland/X11)
 #
 # deps: see pyproject.toml (platform-specific via sys_platform markers)
 #
 # permissions:
-#   macOS   — System Settings → Privacy & Security → Accessibility → grant your terminal
-#   Linux   — active graphical Wayland session with xdg-desktop-portal(-gnome)
-#             running; first run needs one-time consent via a GNOME dialog
+#   macOS         — System Settings → Privacy & Security → Accessibility → grant your terminal
+#   Linux/Wayland — active graphical session with xdg-desktop-portal(-gnome)
+#                   running; first run needs one-time consent via a GNOME dialog
+#   Linux/X11     — no consent needed; EWMH-compliant window manager required
+#                   so gui-scope can raise/focus the target app's window
 #
 # usage:
 #   scope = GUIScope("Burp Suite")            # launches app if not running

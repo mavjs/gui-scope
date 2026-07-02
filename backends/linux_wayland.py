@@ -29,7 +29,7 @@ from gi.repository import Gio, GLib  # noqa: E402
 
 from PIL import Image  # noqa: E402
 
-from .linux_common import LinuxCommonBackend, keysym_for_key
+from .linux_common import LinuxCommonBackend
 from . import wayland_token
 
 _PORTAL_BUS_NAME = "org.freedesktop.portal.Desktop"
@@ -209,14 +209,6 @@ class LinuxWaylandBackend(LinuxCommonBackend):
             "NotifyKeyboardKeysym",
             GLib.Variant("(oa{sv}iu)", (session_handle, {}, keysym, 1 if down else 0)),
         )
-
-    def _press_key(self, key: str) -> bool:
-        keysym = keysym_for_key(key)
-        if keysym is None:
-            return False
-        self._key_event(keysym, True)
-        self._key_event(keysym, False)
-        return True
 
     # ── screenshot ───────────────────────────────────────────────────────────
 

@@ -137,7 +137,7 @@ class LinuxCommonBackend(GUIScopeBackend):
         print(f"launching '{app_name}'...", flush=True)
 
         if launch_cmd:
-            subprocess.Popen(shlex.split(launch_cmd))
+            self._spawn_detached(shlex.split(launch_cmd))
             return
 
         # 1. Look for a matching .desktop entry (exact name, then case-insensitive).
@@ -164,7 +164,23 @@ class LinuxCommonBackend(GUIScopeBackend):
                 pass  # fall through to literal executable
 
         # 2. Fallback: treat app_name as a literal executable on $PATH.
-        subprocess.Popen([app_name])
+        self._spawn_detached([app_name])
+
+    def _spawn_detached(self, argv: list[str]) -> None:
+        """
+        Launch a long-lived GUI app without tying its stdio to ours — a plain
+        subprocess.Popen(argv) inherits our stdout/stderr fds, so if we're
+        running inside a shell pipeline (e.g. `gui-scope tree | head`), the
+        launched app holds the pipe open for its entire lifetime and every
+        downstream reader blocks forever waiting for EOF that never comes.
+        """
+        subprocess.Popen(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
 
     # ── tree ─────────────────────────────────────────────────────────────────
 
@@ -352,7 +368,12 @@ class LinuxCommonBackend(GUIScopeBackend):
         raise NotImplementedError
 
     def _press_key(self, key: str) -> bool:
-        raise NotImplementedError
+        keysym = keysym_for_key(key)
+        if keysym is None:
+            return False
+        self._key_event(keysym, True)
+        self._key_event(keysym, False)
+        return True
 
     def _screenshot(self) -> bytes:
         raise NotImplementedError

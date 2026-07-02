@@ -1,5 +1,5 @@
 ---
-description: Drive any GUI application (macOS, or Linux/Wayland) via the gui-scope CLI — general-purpose, not tied to one app. Use for any task that needs to click, type, or read the UI of a desktop application.
+description: Drive any GUI application (macOS, or Linux/Wayland/X11) via the gui-scope CLI — general-purpose, not tied to one app. Use for any task that needs to click, type, or read the UI of a desktop application.
 argument-hint: '[task description, e.g. "open TextEdit and create a new document"]'
 ---
 
@@ -32,12 +32,13 @@ specifically need to keep one screenshot permanently at a fixed path.
 
 - **macOS**: use the app's localized display name as shown in the menu bar
   (e.g. `"Safari"`, `"Xcode"`).
-- **Linux (Wayland)**: AT-SPI registers apps under their **executable
+- **Linux (Wayland or X11)**: AT-SPI registers apps under their **executable
   name**, not the friendly display name — e.g. `"gnome-text-editor"`, not
-  `"Text Editor"`. If a name doesn't connect, check `ps aux | grep -i
-  <app>` for the real process name. If the app still won't launch
-  automatically, pass `--launch-cmd "actual command"` to override both the
-  `.desktop`-entry and executable-name lookups.
+  `"Text Editor"`. This is the same on both display servers. If a name
+  doesn't connect, check `ps aux | grep -i <app>` for the real process name.
+  If the app still won't launch automatically, pass `--launch-cmd "actual
+  command"` to override both the `.desktop`-entry and executable-name
+  lookups.
 
 Run `tree --depth 3` first — if it returns a populated tree, you've got the
 right name and the app is reachable.
@@ -75,8 +76,9 @@ rule — if one field returns `not_found`, try the other:
 
 ---
 
-## Known Linux (Wayland) limitations — read before troubleshooting
+## Known Linux limitations — read before troubleshooting
 
+**Wayland:**
 - **Screenshots are full-screen, not cropped to the app window.** AT-SPI
   doesn't reliably report a window's true on-screen position in this
   backend — `shot` returns the whole screen so you don't get a confidently
@@ -93,11 +95,22 @@ rule — if one field returns `not_found`, try the other:
   input control?" dialog.** Check **"Remember this decision"** and approve
   it — later runs will skip the dialog. If it keeps reappearing, that
   checkbox likely wasn't checked.
+
+**X11:**
+- No consent dialog and no full-screen fallback — AT-SPI's reported window
+  position is real on X11, so `shot` crops to the actual app window, and
+  clicks use true absolute positioning.
+- Before every click/key/screenshot, gui-scope automatically raises and
+  focuses the target app's window (X11 input is screen-position based, not
+  routed through the accessibility tree, so the target window has to
+  actually be on top). You may see the window briefly pop to the front —
+  that's expected, not a bug.
+
+**Both:**
 - **Java/Swing apps need `java-atk-wrapper` to be reachable at all.**
   Without it, the app simply won't show up in `tree` regardless of the
   `--app` name used. This is a known, currently-hard-to-resolve gap on
   several distros (not packaged for EL10/current EPEL as of 2026-07).
-- X11 sessions are not yet supported — Wayland only for now.
 
 ---
 

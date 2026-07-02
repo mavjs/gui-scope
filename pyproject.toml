@@ -6,11 +6,13 @@ dependencies = [
     "atomacos; sys_platform == 'darwin'",
     "pyobjc-framework-Quartz; sys_platform == 'darwin'",
     "pyobjc-framework-Cocoa; sys_platform == 'darwin'",
-    # Linux (Wayland backend). X11 support is planned as a follow-up and will
-    # add python-xlib/mss at that point — not needed for Wayland.
+    # Linux (Wayland + X11 backends). AT-SPI tree/find/click/type is shared
+    # across both display servers via PyGObject; python-xlib is only
+    # imported by the X11 backend (input synthesis + screenshot via XTEST).
     "PyGObject; sys_platform == 'linux'",
     "Pillow; sys_platform == 'linux'",
     "psutil; sys_platform == 'linux'",
+    "python-xlib; sys_platform == 'linux'",
 ]
 
 [project.scripts]

@@ -128,12 +128,15 @@ patterns and known quirks. Re-run `setup.sh` to install it.
 
 ---
 
-## Linux (Wayland) setup
+## Linux setup
 
-Linux support currently targets **Wayland only** (e.g. GNOME/mutter, such as
-CentOS Stream 10's default desktop). X11 is a planned follow-up and is not
-yet implemented — `gui-scope` will raise a clear error if `XDG_SESSION_TYPE`
-isn't `wayland`.
+Linux supports both **Wayland** (e.g. GNOME/mutter, such as CentOS Stream
+10's default desktop) and **X11** (e.g. XFCE/xfwm4, such as Kali's default
+desktop). `gui-scope` auto-detects which one you're running from
+`XDG_SESSION_TYPE` (falling back to `$DISPLAY` if that's unset, e.g. a bare
+`startx` session) and picks the matching backend — no flag needed.
+
+### Wayland
 
 **Prerequisites:**
 - `xdg-desktop-portal` and `xdg-desktop-portal-gnome` (or your compositor's
@@ -170,8 +173,8 @@ isn't `wayland`.
   `gobject-introspection-devel` package, which doesn't exist for EL10;
   `pkgconf-pkg-config` is typically already installed.)
 
-  **Ubuntu LTS / Debian / Kali (apt) — best-effort, not yet verified on real
-  hardware:**
+  **Ubuntu LTS / Debian / Kali (apt) — confirmed on real hardware (Kali,
+  2026-07):**
   ```bash
   sudo apt install -y libcairo2-dev libgirepository-2.0-dev gobject-introspection \
     python3-dev pkg-config
@@ -213,6 +216,39 @@ alongside Claude Code, instead of only seeing it after the fact via
 `screenshot`. This is especially useful when running Claude Code in one
 window while the driven GUI is visible in another.
 
+### X11
+
+**Prerequisites:**
+- `python3-xlib` (installed automatically by `uv sync`/`setup.sh` via
+  `pyproject.toml`'s Linux dependencies).
+- The XTEST extension, which ships enabled by default on essentially every
+  X server — no separate install needed.
+- An EWMH-compliant window manager (xfwm4, mutter, KWin, and most others all
+  qualify) so `gui-scope` can raise/focus the target app's window before
+  acting on it — see the note below.
+
+**No consent dialog, no restore token (confirmed working):**
+Unlike Wayland, X11 needs no portal and no human-in-the-loop approval —
+`XTestFakeMotionEvent`/`XTestFakeButtonEvent`/`XTestFakeKeyEvent` synthesize
+input directly against the X server the moment gui-scope runs. There's also
+true absolute pointer positioning (no corner-warp workaround needed), and
+`screenshot` crops to the app's actual window instead of returning the full
+screen, because AT-SPI's reported screen coordinates are real on X11 —
+confirmed on real hardware (Kali/XFCE, 2026-07) by cross-checking against
+`xdotool getwindowgeometry`.
+
+**Target window must be raisable (confirmed requirement):**
+X11 input synthesis and screen capture are hardware/screen-position based,
+not routed through the accessibility tree — if the target app's window is
+covered by another window, a click or screenshot at its reported coordinates
+will hit whatever window is actually on top there instead. `gui-scope`
+handles this automatically: before every click, keypress, or screenshot, it
+raises and focuses the target app's window via an EWMH `_NET_ACTIVE_WINDOW`
+request (matched to the app by PID). You may see the target window briefly
+pop to the front during a session — that's expected. If your window manager
+isn't EWMH-compliant, this silently no-ops and you'll need to keep the
+target window on top yourself.
+
 **Screenshot storage and cleanup (all OSes):**
 `shot` with no `--out` writes a timestamped PNG under
 `./.gui-scope/screenshots/` (relative to the current working directory,
@@ -252,13 +288,22 @@ screen — it may be hidden behind a dialog or off-screen pane.
 Bring the app to the front first by clicking any element in it, then retake
 the screenshot.
 
-**Linux: screenshot shows the whole desktop, not just the target app**
+**Linux/Wayland: screenshot shows the whole desktop, not just the target app**
 Expected — confirmed on real hardware that AT-SPI never reports a window's
 true on-screen position (always `(0, 0)`), so cropping to "the app's
 bounds" was confidently wrong rather than just imprecise (it showed whatever
 window actually occupied that screen region). `screenshot` now
 intentionally returns the full, uncropped screen; locate the target app
 visually in the image.
+
+**Linux/X11: screenshot or click shows/hits the wrong window**
+The target app's window wasn't actually on top at the coordinates AT-SPI
+reported — X11 input/capture is screen-position based, not accessibility-
+tree based. `gui-scope` raises and focuses the target window automatically
+before every action (see `_ensure_active()` in `linux_x11.py`); if this is
+still happening, your window manager likely isn't EWMH-compliant (no
+`_NET_CLIENT_LIST`/`_NET_ACTIVE_WINDOW` support), in which case keep the
+target window on top yourself as a workaround.
 
 **Linux: `--app "Some Display Name"` never connects / times out**
 AT-SPI's app name is the **process/executable name**, not the friendly
@@ -287,9 +332,19 @@ automatically apply to an app bundling its own private JRE (as Burp Suite
 does). This is a currently-unresolved blocker for Burp specifically; native
 GTK/Qt apps are unaffected.
 
-**Linux: portal calls hang or time out**
+**Linux/Wayland: portal calls hang or time out**
 No active graphical session, or `xdg-desktop-portal`/`xdg-desktop-portal-gnome`
 isn't running. Check `systemctl --user status xdg-desktop-portal`.
+
+**Linux: launching an app makes the shell pipeline it was called from hang forever**
+Fixed as of this backend's initial implementation — `_launch`'s literal-
+executable fallback used a bare `subprocess.Popen`, which inherited gui-scope's
+own stdout/stderr; a long-lived GUI app holding that pipe open forever meant
+downstream readers (e.g. `gui-scope tree | head`) never saw EOF. `_launch`
+now routes through `_spawn_detached()` (`stdin`/`stdout`/`stderr` to
+`DEVNULL`, `start_new_session=True`). If you still see this on a current
+checkout, check whether a custom `--launch-cmd` itself spawns a child that
+inherits your terminal's fds.
 
 **Linux: the "Allow input control?" dialog keeps reappearing on every run**
 You (or whoever approved it) needs to check **"Remember this decision"** in
